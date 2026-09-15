@@ -1,0 +1,26 @@
+{
+  "name": "stump-wtf",
+  "version": "0.1.0",
+  "description": "Harness-agnostic agent skills for stump.wtf products and the StumpCloud fleet, in three families: coding (how the apps are built), operating (for the scheduled sweep agents that run against the fleet), and review (QA, debugging, audit, test).",
+  "author": {
+    "name": "Joe Stump",
+    "url": "https://gitea.stump.rocks/joestump"
+  },
+  "homepage": "https://github.com/stump-wtf/skills",
+  "repository": "https://github.com/stump-wtf/skills",
+  "keywords": [
+    "stump-wtf",
+    "stumpcloud",
+    "agent-skills",
+    "coding",
+    "operating",
+    "review",
+    "ansible",
+    "gitea",
+    "ci",
+    "openbao",
+    "go",
+    "htmx",
+    "sdd"
+  ]
+}

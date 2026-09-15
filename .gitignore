@@ -1,0 +1,16 @@
+# Agent worktrees. Claude Code creates these inside the repo, so they must stay
+# invisible to git, builds, linters and `git ls-files` globs.
+.claude/worktrees/
+
+# Python bytecode from tools/ and skills/*/scripts/.
+__pycache__/
+*.pyc
+
+# pytest state.
+.pytest_cache/
+
+# Skill-creator eval runs: throwaway, and must not sit under skills/ where the
+# frontmatter linter expects every directory to be a real skill.
+.eval-workspace/
+
+.DS_Store

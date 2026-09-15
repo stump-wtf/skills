@@ -1,0 +1,15 @@
+{
+  "name": "stump-wtf-skills",
+  "owner": {
+    "name": "Joe Stump",
+    "url": "https://github.com/stump-wtf"
+  },
+  "description": "The stump.wtf agent-skill marketplace: harness-agnostic coding, operating, and review skills for stump.wtf products and the StumpCloud fleet.",
+  "plugins": [
+    {
+      "name": "stump-wtf",
+      "source": ".",
+      "description": "Build, operate, and review stump.wtf products and the StumpCloud fleet from any harness: coding house style, fleet operations for sweep agents, and review/QA practice."
+    }
+  ]
+}
