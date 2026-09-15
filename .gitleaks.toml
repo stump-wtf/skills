@@ -1,0 +1,24 @@
+# Gitleaks Configuration
+#
+# Extends the default ruleset and adds nothing. This repo is prose with shell
+# commands pasted into it, which is exactly the shape that hides a credential:
+# a live AWS Route53 key pair sat in a skill doc in claude-personal for seven
+# weeks before anyone scanned for it (found 2026-08-19). The scan is therefore
+# a required check from the first commit, not something added after the first
+# leak.
+#
+# There are no allowlist entries and there should not be. The only defensible
+# reason to add one is a secret that is already DEAD and cannot be scrubbed
+# from a shared history -- and the entry then records that it is inert, not
+# that the scanner is inconvenient. Rotate first; the credential is burned the
+# moment it lands.
+#
+# Do not reach for a line-pinned .gitleaksignore either. That file is a tax due
+# on every edit above the pinned line: it cost six re-pin commits in
+# stumpcloud/ansible before the plaintext credentials were rotated out of the
+# tree entirely and it emptied. Remove the secret rather than maintain the pin.
+#
+# @joestump-agent 08/30/2026 - Initial version.
+
+[extend]
+useDefault = true

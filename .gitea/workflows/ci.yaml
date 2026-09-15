@@ -1,0 +1,110 @@
+---
+# The Single Pipeline For stump.wtf/skills
+#
+# Shape: fan-out to three named jobs, then one fan-in gate. `lint` and `test`
+# invoke the same make targets a human runs locally, so a green local run means
+# something; `gitleaks` composes the shared secret scan from stump.wtf/ci so this
+# repo cannot carry a stale private copy of it.
+#
+# The jobs are split rather than run as one `make check` because job granularity
+# is often the only signal about what actually failed on this Gitea instance.
+# Together `lint` and `test` are exactly `make check`.
+#
+# @joestump-agent 08/30/2026 - Initial version.
+#
+# @joestump 09/14/2026 - Carried verbatim into stump.wtf/skills. The vending
+# entry requires lint, test, gitleaks AND the gate individually, so a job
+# dropped from `needs:` still cannot merge unnoticed.
+name: CI
+
+# Deliberately NOT path-filtered. `gate` is the required status check in branch
+# protection, and a path-filtered workflow simply does not run on a PR that
+# touches nothing matching -- so no status is ever posted and the PR is blocked
+# forever waiting for a check that will never arrive. stumpcloud/ansible's
+# ci.yaml:96-105 documents the same reasoning. The whole pass is well under a
+# minute, so running it on every PR costs nothing worth that failure mode.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The runner image ships neither, and the linters are stdlib-only, so
+      # this is the entire toolchain they need -- no pip install, no PyYAML.
+      - name: Install make and python3
+        run: sudo apt-get update && sudo apt-get install -y make python3
+
+      - name: make lint
+        run: make lint
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pytest comes from apt, not pip: setup-python and container: both fail on
+      # this runner, and apt keeps the toolchain to one line with no venv to
+      # activate. python3-yaml is here because a skill's bundled scripts may
+      # parse YAML -- PyYAML is not stdlib, and the linters' own PyYAML
+      # cross-check skips rather than fails without it.
+      - name: Install make, python3, pytest and PyYAML
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make python3 python3-pytest python3-yaml
+
+      - name: make test
+        run: make test
+
+  # Required from the first commit, not added once something leaks. A live AWS
+  # Route53 key pair sat in a skill doc in claude-personal for seven weeks
+  # unscanned (found 2026-08-19); this repo is exactly that shape -- prose with
+  # commands pasted into it.
+  #
+  # Composed rather than copied. The same fork-checkout bug shipped to two repos
+  # because both pasted the same broken example, and each had to be fixed
+  # separately; secret scanning is policy, so a repo must not be able to hold a
+  # stale copy of it. The callee reads this repo's .gitleaks.toml and scans full
+  # history.
+  gitleaks:
+    name: gitleaks
+    uses: https://gitea.stump.rocks/stump.wtf/ci/.gitea/workflows/gitleaks.yaml@main
+    secrets: inherit
+
+  # The single status check to require in branch protection. The repo's vending
+  # entry pins status_check_patterns: ["CI / all checks passed*"], so this job's
+  # NAME is load-bearing -- rename it and every PR jams waiting on a context
+  # that is never posted. The trailing * in the pattern absorbs the "(event)"
+  # suffix Gitea appends to the context string.
+  gate:
+    name: all checks passed
+    needs: [lint, test, gitleaks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      # Every dependency is asserted explicitly. Adding a job to `needs:` alone
+      # does NOT gate on it -- with `if: always()` this step runs whatever the
+      # upstream results were, so an unasserted job could fail while gate went
+      # green. If you add another job, add it to BOTH lists.
+      - name: Require lint, tests and secret scanning to have passed
+        run: |
+          lint='${{ needs.lint.result }}'
+          test='${{ needs.test.result }}'
+          gitleaks='${{ needs.gitleaks.result }}'
+          echo "lint: ${lint}  test: ${test}  gitleaks: ${gitleaks}"
+          if [ "$lint" != "success" ] || [ "$test" != "success" ] \
+             || [ "$gitleaks" != "success" ]; then
+            echo "::error::CI did not succeed (lint=${lint} test=${test}" \
+              "gitleaks=${gitleaks})"
+            exit 1
+          fi
+          echo "Skills lint clean, tests passed, no secrets."
