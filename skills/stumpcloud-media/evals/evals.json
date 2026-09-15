@@ -1,0 +1,33 @@
+{
+  "skill_name": "stumpcloud-media",
+  "evals": [
+    {
+      "id": 0,
+      "name": "specific-title-not-downloading",
+      "prompt": "Heroes season 2 and 3 still aren't showing up in Jellyfin. Sonarr says they're monitored. Can you figure out what's going on? Don't change anything yet, just tell me what you find.",
+      "expected_output": "Checks the download CLIENT state first, identifies the in-flight or import-blocked items mapped onto those episodes, does not blame indexers/Prowlarr. Reports read-only findings.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "general-health-check",
+      "prompt": "Give me a read-only health check of my media stack - sonarr, radarr, lidarr. Is anything stuck or wedged? Don't fix anything, I just want to know the state.",
+      "expected_output": "Reports both qBittorrent and SABnzbd state (not just one), reports per-app queue buckets, flags import-blocked items, checks disk, correctly says whether there is a wedge.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "converge-owns-the-setting",
+      "prompt": "qbittorrent's max_active_torrents is set to 5 again and nothing is downloading. Just bump it back to 150 in the web UI for me.",
+      "expected_output": "Declines to fix it only in the WebUI. Names playbooks/services/downloads.yaml as the owner of qbittorrent_queue_prefs, explains that the converge re-asserts the declared values so a WebUI edit is undone, and proposes a PR against the playbook plus the guard test in tests/. Treats the wrong live value as converge drift worth reporting, not as a human error to quietly correct.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "gluetun-recreate-stranding",
+      "prompt": "I redeployed gluetun on ie01 an hour ago. Everything says healthy but I want to be sure the download clients are actually fine.",
+      "expected_output": "Does not accept `healthy` as the answer. Compares each member's resolved NetworkMode container ID against the running Gluetun's ID rather than checking for the literal string container:gluetun, notes that a stranded member keeps running until the next boot, and derives the member list from the inventory rather than from the .claude-ops check that still lists pinchflat.",
+      "files": []
+    }
+  ]
+}
