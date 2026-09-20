@@ -28,9 +28,13 @@ Arr Backlog Triage — read-only diagnosis
 #
 # @joestump 09/20/2026 - Media defaults follow the stack to ie02 /voltron/Media.
 # The ie01 defaults had gone stale: a bare run probed the EXITED copy of the
-# stack still sitting on ie01 and reported on a host nothing runs on. The vault
-# prefix deliberately stays ie01 -- arr-keys.yaml still writes `path: ie01/arr`,
-# so the credential path did not move with the services.
+# stack still sitting on ie01 and reported on a host nothing runs on.
+#
+# @joestump 09/20/2026 - The vault prefix moved to ie02 in lockstep with
+# arr-keys.yaml's retarget (stumpcloud/ansible, stumpcloud/stumpcloud#452): the
+# provisioner now runs on ie02 and writes `{{ inventory_hostname }}/arr`, so the
+# credential path follows the services. The ie01/arr data stays in OpenBao for
+# the museum-copy era it describes.
 
 Usage:
     python3 arr_triage.py                 # human-readable report
@@ -49,11 +53,11 @@ import urllib.request
 
 VAULT_ADDR = os.environ.get("VAULT_ADDR", "https://vault.stump.rocks")
 
-# OpenBao path prefix for this stack's credentials. Written literally as
-# `path: ie01/arr` by playbooks/services/arr-keys.yaml, so it follows the
-# playbook rather than the host -- re-derive with:
+# OpenBao path prefix for this stack's credentials. arr-keys.yaml writes the
+# host-scoped `path: {{ inventory_hostname }}/arr` on ie02, so the prefix is
+# ie02 -- re-derive with:
 #   grep -n 'path: .*arr' playbooks/services/arr-keys.yaml
-DEFAULT_VAULT_PREFIX = "ie01"
+DEFAULT_VAULT_PREFIX = "ie02"
 
 # Dated snapshot, 2026-09-20. See the module docstring for the derivation.
 # ie02 overrides paths.media to /voltron/Media in dub.yaml's host block; the

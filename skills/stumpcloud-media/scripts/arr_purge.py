@@ -24,6 +24,12 @@ Arr Backlog Purge — remove + blocklist dead and terminally-blocked queue items
 # prefix became --vault-prefix instead of a literal `ie01`, so the script does
 # not carry a frozen host. The *arr and client URLs are Caddy vhosts and are
 # stable across a host move, so they stay constants.
+#
+# @joestump-agent 09/20/2026 - DEFAULT_VAULT_PREFIX follows the arr stack to
+#   ie02 (stumpcloud/stumpcloud#452): arr-keys.yaml now runs on ie02 and writes
+#   the host-scoped {{ inventory_hostname }}/arr, so the credential path moved
+#   with the services. The ie01/arr data stays in OpenBao for the era it
+#   describes; --vault-prefix still overrides.
 
 Usage:
     python3 arr_purge.py --app sonarr                    # dry run, shows counts
@@ -44,7 +50,7 @@ VAULT_ADDR = os.environ.get("VAULT_ADDR", "https://vault.stump.rocks")
 # Must match arr_triage.py, or triage promises a purge that this script then
 # silently declines to make ("no api key in OpenBao, skipping"). Pinned by
 # arr_purge_test.py::test_vault_prefix_matches_across_scripts.
-DEFAULT_VAULT_PREFIX = "ie01"
+DEFAULT_VAULT_PREFIX = "ie02"
 
 VAULT_PREFIX = DEFAULT_VAULT_PREFIX
 

@@ -250,14 +250,16 @@ def test_media_defaults_point_at_the_running_stack():
     assert arr_triage.DEFAULT_MEDIA_ROOT == "/voltron/Media"
 
 
-def test_vault_prefix_did_not_follow_the_services():
-    """The credential path stayed behind, and that is not a typo.
+def test_vault_prefix_follows_the_services():
+    """The credential path moved with the stack, in lockstep with the playbook.
 
-    arr-keys.yaml still writes `path: ie01/arr`, so the OpenBao prefix is ie01
-    even though the services are on ie02. Anyone 'fixing' this to match the host
-    breaks every credential lookup, so the asymmetry is pinned deliberately.
+    The prefix was deliberately ie01 while arr-keys.yaml still wrote
+    `path: ie01/arr` from the exited museum copy (stumpcloud/stumpcloud#452).
+    The playbook now runs on ie02 and writes the host-scoped
+    `{{ inventory_hostname }}/arr`, so the prefix is ie02 and the asymmetry pin
+    is retired -- if provisioner and reader ever disagree again, this fails.
     """
-    assert arr_triage.DEFAULT_VAULT_PREFIX == "ie01"
+    assert arr_triage.DEFAULT_VAULT_PREFIX == "ie02"
 
 def test_structural_checks_uses_the_host_it_was_given(monkeypatch):
     """A frozen ssh target silently diagnoses a machine nobody asked about."""
