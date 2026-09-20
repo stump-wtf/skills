@@ -229,11 +229,35 @@ def test_healthy_records_are_viable():
 
 
 # ------------------------------------------------------- host and pool placement
-# The media tier is mid-move: pinchflat left ie01 for ie02 /voltron/Media on
-# 2026-08-27 and ADR-0059 proposes the rest following. A hardcoded host or pool
-# root does not error when it goes stale -- it measures the wrong filesystem and
-# reports it confidently, which is exactly how a `df` reading gets quoted at
-# someone as proof the wrong pool is full.
+# The media tier finished its move: the whole arr stack now runs on ie02 at
+# /voltron/Media, and ie01 keeps an EXITED copy of every container with its old
+# /tank/media mounts. A hardcoded host or pool root does not error when it goes
+# stale -- it measures the wrong filesystem and reports it confidently, which is
+# exactly how a `df` reading gets quoted at someone as proof the wrong pool is
+# full. Here it is worse than usual, because the stale target still exists and
+# still answers.
+
+
+def test_media_defaults_point_at_the_running_stack():
+    """The ie01 defaults outlived the move and probed the exited copy.
+
+    These are a dated snapshot by design -- the script documents how to
+    re-derive them -- but a snapshot nobody notices going stale is how the
+    default invocation ended up reporting on a host that runs nothing. Pin them
+    so the update is a deliberate edit here, with the derivation in the diff.
+    """
+    assert arr_triage.DEFAULT_MEDIA_HOST == "ie02.stump.rocks"
+    assert arr_triage.DEFAULT_MEDIA_ROOT == "/voltron/Media"
+
+
+def test_vault_prefix_did_not_follow_the_services():
+    """The credential path stayed behind, and that is not a typo.
+
+    arr-keys.yaml still writes `path: ie01/arr`, so the OpenBao prefix is ie01
+    even though the services are on ie02. Anyone 'fixing' this to match the host
+    breaks every credential lookup, so the asymmetry is pinned deliberately.
+    """
+    assert arr_triage.DEFAULT_VAULT_PREFIX == "ie01"
 
 def test_structural_checks_uses_the_host_it_was_given(monkeypatch):
     """A frozen ssh target silently diagnoses a machine nobody asked about."""

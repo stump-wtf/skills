@@ -1,6 +1,6 @@
 ---
 name: stumpcloud-media
-description: Diagnose and clean up Sonarr, Radarr, and Lidarr download backlogs across qBittorrent and SABnzbd on StumpCloud. Use whenever the arr queue or activity page is called a mess, stuck, huge, wedged, or full of junk; whenever a show, movie, or album will not download, keeps failing, or never showed up; whenever downloads look stalled, paused, or slow; whenever the media pool is filling up, imports fail, or hardlinks look broken; whenever Gluetun or the VPN-routed download clients are unreachable; and whenever someone asks to clear, purge, triage, or unstick a queue. Use it proactively before blaming indexers, Prowlarr, or the VPN for missing media, because the cause is almost always the download client. Use it before changing any client setting in a WebUI, because the converge owns those values and will undo you.
+description:   Diagnose and clean up Sonarr, Radarr, and Lidarr download backlogs across qBittorrent and SABnzbd on StumpCloud. Use whenever the arr queue or activity page is called a mess, stuck, wedged, or full of junk; whenever a show, movie, or album will not download, keeps failing, or never showed up; whenever downloads look stalled, paused, or slow; whenever the media pool fills up, imports fail, or hardlinks look broken; whenever Gluetun or the VPN-routed clients are unreachable; whenever a Jellyseerr or Overseerr request fails or will not submit; and whenever someone asks to clear, purge, triage, or unstick a queue. Use it proactively before blaming indexers, Prowlarr, or the VPN for missing media, because the cause is almost always the download client or a stale path. Use it before changing any client setting in a WebUI, because the converge owns those values and will undo you.
 ---
 
 # StumpCloud media stack
@@ -18,9 +18,19 @@ ansible-inventory -i dub.yaml --graph media          # which host runs the arr s
 grep -n 'media:' dub.yaml | head                     # all.vars paths.media, plus per-host overrides
 ```
 
-Dated snapshot, 2026-08-30: `media` resolves to `ie01`, `paths.media` is `/tank/media`, and `pinchflat` sits alone on `ie02` at `/voltron/Media` — moved off ie01 and **dropped from VPN membership** on 2026-08-27 (`dub.yaml`, pinchflat service block). ADR-0059 proposes consolidating everything onto voltron but is still `status: proposed`, so it is a plan, not the fleet. Check the status line before treating any ADR as description.
+Dated snapshot, 2026-09-20: the consolidation **happened**. `media` resolves to `ie02`, and ie02 overrides `paths.media` to `/voltron/Media` (`dub.yaml`, ie02 host block) against the fleet default of `/tank/media`. The previous snapshot here said ie01 and `/tank/media` and was wrong for weeks; if this one disagrees with `ansible-inventory`, the inventory wins.
+
+**The stale copy on ie01 is the live hazard.** ie01 still holds exited `gluetun`, `qbittorrent`, `sabnzbd`, `prowlarr`, `sonarr` and `radarr` containers with their old `/tank/media` mounts, and `docker ps -a` on the wrong host shows you a complete, plausible, entirely dead stack. Always confirm you are on the running one:
+
+```bash
+for h in ie01 ie02; do echo "== $h"; ssh $h.stump.rocks 'sudo docker ps -a --format "{{.Names}} {{.Status}}"' | grep -E 'sonarr|radarr|gluetun'; done
+```
+
+`Exited` on one host and `Up` on the other means you found the museum. Retiring those containers is a repo change, so it is an issue, not a cleanup you do in passing.
 
 Container paths are the single `/data` root everywhere: `/data/TV`, `/data/Movies`, `/data/Music`, `/data/Downloads`. Host paths are `{{ paths.media }}/...`.
+
+**Container path and host path are not interchangeable, and confusing them sends you to the wrong fix.** `/data/TV` is a path inside the *Sonarr* container. Anything that hands Sonarr a root folder — Jellyseerr, a script, you with curl — is passing a string that Sonarr resolves in *its own* namespace. So a caller running on a different host than Sonarr is not a problem to solve, and "move the caller" is not the fix for a rejected path. See the next section.
 
 ## Start here, every time
 
@@ -72,7 +82,7 @@ The right test is **resolved-ID equality**, not the literal string:
 
 ```bash
 # on the media host, over ssh as joestump
-ssh ie01.stump.rocks 'GL=$(sudo docker inspect -f "{{.Id}}" gluetun); \
+ssh ie02.stump.rocks 'GL=$(sudo docker inspect -f "{{.Id}}" gluetun); \
   for c in qbittorrent sabnzbd; do \
     echo "$c $(sudo docker inspect -f "{{.HostConfig.NetworkMode}}" $c) want container:$GL"; done'
 ```
@@ -93,6 +103,34 @@ The link-count check in `arr_triage.py --structural` is a cheap corroborating si
 **No seeding limit means nothing is ever reclaimed.** An *arr will not remove a torrent that is still seeding. `downloads.yaml` pins `max_ratio_enabled` and `max_seeding_time_enabled` true, so seeing them off is converge drift.
 
 **Dead VPN port forwarding looks exactly like dead torrents.** An empty forwarded port means zero inbound peers, and low-seed torrents sit "stalled with no connections" on swarms that are perfectly alive. Judge viability by `num_complete` (swarm seeders), never `num_seeds` (currently connected). Purging a live-swarm-no-connections torrent throws away a good grab and the replacement stalls identically.
+
+## The request front-end submits a path, and nobody validates it
+
+Jellyseerr (`jellyseerr.stump.rocks`, on ie01) is where the household actually asks for things. It mounts **only** its own config — no media, ever. When someone requests a show it calls Sonarr's API with a `rootFolderPath` string it has stored, and that string lives in `settings.json` inside its config volume as `activeDirectory`, one per configured server.
+
+**That file is runtime state, not Ansible-managed.** `dub.yaml`'s jellyseerr block pins the image, port, volumes, env and labels; it says nothing about root folders. So a host move, a mount change or a consolidation updates the `*arr` and leaves the request front-end pointing at a path that no longer exists, and nothing in the converge notices.
+
+Its failure signature is the reason this section exists:
+
+- Every endpoint is 200 and every container is healthy.
+- Sonarr and Radarr are fine, with root folders reporting `accessible: true`.
+- Every user request fails, and only the user sees it.
+
+```
+[Radarr]: Failed to add movie to Radarr ... "errorCode": "RootFolderExistsValidator",
+          "errorMessage": "Root folder '/movies' does not exist"
+[Media Request]: Something went wrong sending movie request to Radarr, marking status as FAILED
+```
+
+Seen 2026-09-20: the stack moved ie01 → ie02, the mount went from `/media/TV:/tv` to `/voltron/Media:/data`, and Jellyseerr kept submitting `/tv` and `/movies` for **eight days** while the daily sweep reported three green endpoints.
+
+### Check the coupling, not the endpoints
+
+Ask each `*arr` what its root folders actually are, then compare against what the front-end stores. Never read one and assume the other. `accessible: false` is a broken mount, which is a repo change and so an issue; a *mismatch* between the two lists is the front-end's own stale setting, and that one you may correct.
+
+Back up `settings.json`, patch only `activeDirectory`, restart, then verify by **retrying a failed request and reading the log** — re-reading the setting only proves the write landed. Retrying re-drives real acquisitions, so report how many you retried and the failed count afterwards.
+
+Exact calls, including the API-key handling and the retry endpoint: `references/request-paths.md`.
 
 ## Two traps that cost an hour
 
@@ -126,8 +164,8 @@ Always blocklist, or the app re-grabs the identical dead release on its next RSS
 ## Always check the disk
 
 ```bash
-ssh ie01.stump.rocks 'df -h /tank/media'    # substitute the derived host and root
-ssh ie01.stump.rocks 'zfs get -H quota,used,available tank/media'
+ssh ie02.stump.rocks 'df -h /voltron/Media'   # substitute the DERIVED host and root
+ssh ie02.stump.rocks 'zfs get -H quota,used,available voltron/Media'
 ```
 
 Run the second one before declaring the pool full. ADR-0059 records `tank/media` at a 21 TB **quota**, 0 bytes available, over a pool with 8.03 TB still free — a quota wall, not a full pool, and the two have completely different fixes. An unwedged queue starts consuming disk immediately, so fixing a stall can turn a dormant space problem into an active one within the hour.

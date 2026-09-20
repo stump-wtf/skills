@@ -25,12 +25,18 @@ Arr Backlog Triage — read-only diagnosis
 # hardcoded ie01.stump.rocks / /tank/media / OpenBao prefix with --media-host,
 # --media-root and --vault-prefix, and reworded the no-seed-limit warning as
 # converge drift now that downloads.yaml pins those preferences (#286, #320).
+#
+# @joestump 09/20/2026 - Media defaults follow the stack to ie02 /voltron/Media.
+# The ie01 defaults had gone stale: a bare run probed the EXITED copy of the
+# stack still sitting on ie01 and reported on a host nothing runs on. The vault
+# prefix deliberately stays ie01 -- arr-keys.yaml still writes `path: ie01/arr`,
+# so the credential path did not move with the services.
 
 Usage:
     python3 arr_triage.py                 # human-readable report
     python3 arr_triage.py --json          # machine-readable, for further jq work
     python3 arr_triage.py --app sonarr    # limit to one app
-    python3 arr_triage.py --media-host ie02.stump.rocks --media-root /voltron/Media
+    python3 arr_triage.py --media-host ie01.stump.rocks --media-root /tank/media
 """
 
 import argparse
@@ -49,9 +55,13 @@ VAULT_ADDR = os.environ.get("VAULT_ADDR", "https://vault.stump.rocks")
 #   grep -n 'path: .*arr' playbooks/services/arr-keys.yaml
 DEFAULT_VAULT_PREFIX = "ie01"
 
-# Dated snapshot, 2026-08-30. See the module docstring for the derivation.
-DEFAULT_MEDIA_HOST = "ie01.stump.rocks"
-DEFAULT_MEDIA_ROOT = "/tank/media"
+# Dated snapshot, 2026-09-20. See the module docstring for the derivation.
+# ie02 overrides paths.media to /voltron/Media in dub.yaml's host block; the
+# fleet default is still /tank/media, which is why this is an override and not
+# the group value. Re-derive rather than trusting this pair:
+#   ansible-inventory -i dub.yaml --graph media
+DEFAULT_MEDIA_HOST = "ie02.stump.rocks"
+DEFAULT_MEDIA_ROOT = "/voltron/Media"
 
 VAULT_PREFIX = DEFAULT_VAULT_PREFIX
 
