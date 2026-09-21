@@ -122,7 +122,9 @@ Its failure signature is the reason this section exists:
 [Media Request]: Something went wrong sending movie request to Radarr, marking status as FAILED
 ```
 
-Seen 2026-09-20: the stack moved ie01 → ie02, the mount went from `/media/TV:/tv` to `/voltron/Media:/data`, and Jellyseerr kept submitting `/tv` and `/movies` for **eight days** while the daily sweep reported three green endpoints.
+Seen 2026-09-20: Sonarr and Radarr were recreated on ie02 onto the single `/voltron/Media:/data` mount, their root folders became `/data/TV` and `/data/Movies`, and Jellyseerr kept submitting `/tv` and `/movies`. **The break was latent for ~6h and nobody could have seen it** — the last request before it was 09-12 and the next was 09-20 17:48, which failed. Every endpoint stayed green throughout.
+
+That latency is the point. A coupling breaks when the *mount* changes, not when someone notices, so the gap between "wrong" and "observed" is however long it happens to be until a person asks for something. Check the coupling on a schedule; do not wait for it to be reported.
 
 ### Check the coupling, not the endpoints
 
