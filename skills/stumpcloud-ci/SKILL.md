@@ -30,6 +30,35 @@ Assume green means nothing until you know which context the protection rule requ
 names its exact context string.** Context strings are `<workflow name> / <job display name>
 (<event>)`. Rename a job and every open PR becomes unmergeable.
 
+## The contract every repo meets
+
+**Gitea Actions is the real CI**: it runs on the canonical remote and is what branch protection
+gates on. **GitHub Actions only publishes public artifacts** (a Pages twin, a public release or
+package). Never duplicate the test and lint matrix on the mirror; a second CI that fails
+independently is noise. Every Gitea pipeline covers, at minimum:
+
+1. **Tests** — `make test`.
+2. **Lint** — `make lint`, formatter drift included.
+3. **Secret scan** — gitleaks, so a leaked credential fails the PR instead of landing.
+4. **Ship on merge to `main`** — deploy, publish, or release. `main` moving with nothing shipping
+   is a manual step someone will forget.
+
+CI calls the **same `make` targets** a human runs, or local green stops meaning anything. Every job
+is a **required** check, jobs stay **separately named** (`test`, `lint`, `gitleaks`) so a red status
+says what failed before you open a log, and action versions and the runner image are **pinned**.
+
+`make test`, `make lint`, and `make check` (both) work from a clean checkout in every repo, as thin
+wrappers over the native tools. **A repo lacking them gets them in your change** — a few lines, and
+the highest-leverage fix available to every later session:
+
+| Stack | `make test` wraps | `make lint` wraps |
+|---|---|---|
+| Go | `go test ./...` | `gofumpt -l .`, `go vet ./...`, `golangci-lint` |
+| Python | `pytest` (via Pipenv/uv) | `ruff check`, `ruff format --check` |
+| Node / TS | `npm test` / `vitest` | `eslint`, `tsc --noEmit` |
+| Ruby | `rake test` / `rspec` | `rubocop` |
+| Shell | `bats test/` | `shellcheck` |
+
 ## Before you edit a workflow
 
 ```sh
@@ -145,7 +174,8 @@ Two reading habits that beat reading the diff:
 PR mechanics, review, merge-on-green, worktrees, and force-push policy belong to the PR-review
 workflow and the standing agent rules. So does generic red-CI triage: reproduce locally, make the
 minimal fix, one concern per PR. This skill covers only what is specific to this forge, this
-act_runner, and these pipelines.
+act_runner, and these pipelines. Which forge copy is canonical, and creating or configuring a
+repo (topics, mirror, protection, collaborators), is the `stumpcloud-forges` skill.
 
 ## Files in this skill
 

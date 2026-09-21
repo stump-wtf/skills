@@ -1,6 +1,6 @@
 {
   "name": "stump-wtf",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Harness-agnostic agent skills for stump.wtf products and the StumpCloud fleet, in three families: coding (how the apps are built), operating (for the scheduled sweep agents that run against the fleet), and review (QA, debugging, audit, test).",
   "author": {
     "name": "Joe Stump",
