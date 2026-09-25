@@ -184,7 +184,8 @@ truncates exactly the ones you need.
 Every one of these reads needs a token: anonymous returns **401**, measured 2026-08-30. The agent
 shell carries no `GITEA_TOKEN` in the environment, so never `curl` with one; `tea` is authenticated
 from its own config file, and `gh` from the keyring (GitHub only). `tea api` exits 0 on an HTTP
-error, so read the body. Never `tea --debug` or `tea api -i` — both print the token header.
+error, so read the body. Never `tea --debug` or `tea api -i` — both dump raw HTTP detail
+into the transcript, and debug output can carry the auth header.
 
 **A 500 on `/actions/runs` may be one poison row, not a broken endpoint.** A run whose ref is
 shorter than 10 characters panics Gitea's converter, and the listing converts rows in a loop with no
