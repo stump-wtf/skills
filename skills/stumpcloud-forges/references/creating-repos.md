@@ -14,11 +14,13 @@ The factory plans and policy-checks it on the PR and applies it on merge to `mai
 protection floor cannot be lowered from the entry.
 
 ```sh
-# operator Mac -- does this namespace vend through a factory? (private repo: needs a token)
-curl -s -H "Authorization: token $TOKEN" \
-  https://gitea.stump.rocks/api/v1/repos/<owner>/<owner>-repositories | python3 -c \
-  'import json,sys; d=json.load(sys.stdin); print(d.get("full_name"), d.get("description"))'
+# operator Mac -- does this namespace vend through a factory? (private repo: tea is authenticated)
+tea api --login gitea.stump.rocks repos/<owner>/<owner>-repositories | python3 -c \
+  'import json,sys; d=json.load(sys.stdin); print(d.get("full_name"), d.get("description") or d.get("message"))'
 ```
+
+`tea api` exits 0 on a 404 too; a `not found` message is the answer "no factory here".
+
 
 If it exists:
 
@@ -44,15 +46,17 @@ If it does not exist, do every step below yourself, in order.
 ```sh
 # operator Mac
 gh repo create stump-wtf/<repo> --public --description "<one sentence>"
-# then, against the Gitea API with a token that can administer the repo:
-#   POST /repos/stump.wtf/<repo>/push_mirrors
-#   {"remote_address":"https://github.com/stump-wtf/<repo>.git",
-#    "remote_username":"<github user>","remote_password":"<token from the secret store>",
-#    "interval":"8h0m0s","sync_on_commit":true}
+# then the Gitea side, as a login that can administer the repo. MIRROR_TOKEN is read from the
+# secret store into the environment; jq puts it in the body on stdin, never in argv.
+jq -n --arg u "<github user>" --arg p "$MIRROR_TOKEN" \
+  '{remote_address:"https://github.com/stump-wtf/<repo>.git", remote_username:$u,
+    remote_password:$p, interval:"8h0m0s", sync_on_commit:true}' \
+  | tea api --login gitea.stump.rocks -X POST repos/stump.wtf/<repo>/push_mirrors -d @- \
+  | jq '{remote_name, last_error, message}'
 ```
 
 Never paste the mirror credential into a command line or a transcript; read it from the secret
-store into an environment variable the request reads. After the first sync, **compare the two heads**
+store into an environment variable the request reads. Filter the response: it echoes the mirror. After the first sync, **compare the two heads**
 rather than trusting the mirror's empty `last_error` — an empty error field is not proof of delivery.
 
 ## 2. Add the operator's agent account
@@ -61,7 +65,8 @@ Every repo made "for us" — public or private, whoever asked, either forge — 
 agent account as a collaborator with **write** access. Never hand back a repo the agent cannot
 reach. The account name lives in the private agent rules, not in this public repo.
 
-- **Gitea:** `PUT /repos/<owner>/<repo>/collaborators/<agent>` with `{"permission":"write"}`.
+- **Gitea:** `tea api --login gitea.stump.rocks -X PUT repos/<owner>/<repo>/collaborators/<agent>
+  -d '{"permission":"write"}'`, then read it back from `…/collaborators/<agent>/permission`.
 - **GitHub:** `gh api -X PUT /repos/<owner>/<repo>/collaborators/<agent> -f permission=push`. GitHub
   sends an invitation the agent account must accept.
 

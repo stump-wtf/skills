@@ -166,13 +166,13 @@ Learned from what already works on this instance, not assumed:
 
 ## Reading a run
 
-Against `https://gitea.stump.rocks/api/v1`:
+Through `tea api --login gitea.stump.rocks <path>`:
 
-| Step | Endpoint |
+| Step | Path |
 |---|---|
-| find the run | `GET repos/{owner}/{repo}/actions/runs?limit=20` |
-| find the job | `GET repos/{owner}/{repo}/actions/runs/{run_id}/jobs?limit=100` |
-| read the log | `GET repos/{owner}/{repo}/actions/jobs/{job_id}/logs` |
+| find the run | `repos/{owner}/{repo}/actions/runs?limit=20` |
+| find the job | `repos/{owner}/{repo}/actions/runs/{run_id}/jobs?limit=100` |
+| read the log | `repos/{owner}/{repo}/actions/jobs/{job_id}/logs` |
 
 **The log endpoint works.** Verified 2026-08-30 against `stumpcloud/ansible` job 51301: 17,427
 bytes. Notes elsewhere in these repos still say it 404s and recommend splitting a workflow into one
@@ -182,14 +182,14 @@ Pass `limit=100` on the jobs listing. Callee jobs appear *after* their caller, s
 truncates exactly the ones you need.
 
 Every one of these reads needs a token: anonymous returns **401**, measured 2026-08-30. The agent
-shell carries no `GITEA_TOKEN` in the environment; `tea` is authenticated from its own config file,
-and `gh` from the keyring (GitHub only). Fingerprint or length-check a token if you must confirm one
-is set — never print it.
+shell carries no `GITEA_TOKEN` in the environment, so never `curl` with one; `tea` is authenticated
+from its own config file, and `gh` from the keyring (GitHub only). `tea api` exits 0 on an HTTP
+error, so read the body. Never `tea --debug` or `tea api -i` — both print the token header.
 
 **A 500 on `/actions/runs` may be one poison row, not a broken endpoint.** A run whose ref is
 shorter than 10 characters panics Gitea's converter, and the listing converts rows in a loop with no
 per-item isolation, so one bad row 500s the listing for the whole repo. It looks intermittent
 because a small `limit` skips the bad row. Bisect `limit` (1, 2, 4, 8) to prove it is one row, walk
 `?limit=1&page=N` to name it, read it via `/actions/runs/<id>/jobs` (a different converter path that
-survives), then `DELETE /actions/runs/<id>`. Observed on run 3067 in `joestump/dotfiles`,
+survives), then `tea api --login gitea.stump.rocks -X DELETE repos/{owner}/{repo}/actions/runs/<id>`. Observed on run 3067 in `joestump/dotfiles`,
 2026-07-25. Deleting the run does **not** retract its commit status — a wedged check stays red.

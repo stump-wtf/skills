@@ -112,10 +112,14 @@ main-only, for instance.
 ## Applying it
 
 ```sh
-# [mac] needs GITEA_TOKEN in the environment; it is not there by default
+# [mac] OPERATOR step: the script still curls with GITEA_TOKEN, which agent shells do not have
 GITEA_TOKEN=... ./scripts/apply-branch-protection.sh stump.wtf/cairn
 GITEA_TOKEN=... ./scripts/apply-branch-protection.sh stump.wtf/switchboard main "ci / ci (pull_request)"
 ```
+
+Until the script moves to `tea api`, an agent does not source a token to run it: hand the command to
+the operator. Read the result back with
+`tea api --login gitea.stump.rocks repos/<owner>/<repo>/branch_protections`.
 
 The script samples the contexts actually reported on the most recent PR head and **refuses** to
 require one that has never been seen, printing what the repo does report instead. Call it; never

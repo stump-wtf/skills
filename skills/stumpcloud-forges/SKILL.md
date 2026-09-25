@@ -58,15 +58,19 @@ with `downstream-mirror` on Gitea. Topics are per-host metadata and are **not** 
 mirror.
 
 ```sh
-# operator Mac; both endpoints answer anonymously for a public repo
-curl -s https://gitea.stump.rocks/api/v1/repos/<owner>/<repo>/topics
+# operator Mac
+tea api --login gitea.stump.rocks repos/<owner>/<repo>/topics
 gh api repos/<owner>/<repo>/topics
 ```
 
+Forge calls go through `tea` (Gitea) and `gh` (GitHub) only — never `curl` with a token, which the
+agent shell does not carry, and never a forge MCP. `tea api` exits 0 even on a 404, so read the body.
+
 **Maintain missing topics, once.** When you touch a repo whose `canonical-*` topic is absent, add it
 in that session rather than leaving the next agent to re-derive it. Do not restate correct topics,
-and do not churn the list run after run. Gitea `PUT /repos/<owner>/<repo>/topics/<topic>` adds one
-without disturbing the rest; on GitHub use `gh repo edit <owner>/<repo> --add-topic <topic>`, which
+and do not churn the list run after run. Gitea
+`tea api --login gitea.stump.rocks -X PUT repos/<owner>/<repo>/topics/<topic>` adds one without
+disturbing the rest; on GitHub use `gh repo edit <owner>/<repo> --add-topic <topic>`, which
 merges — the raw `PUT /topics` API replaces the whole list.
 
 - **A control plane may own the field.** Repos vended by the repo factory are declared in

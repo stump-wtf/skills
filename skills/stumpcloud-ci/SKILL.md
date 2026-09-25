@@ -151,17 +151,19 @@ Requiring a context a repo never emits wedges every PR in it. Per-pipeline conte
 
 ## Debugging a red run
 
-Read path, in order, against `https://gitea.stump.rocks/api/v1`:
+Read path, in order, through `tea api --login gitea.stump.rocks` (never `curl` with a token —
+the agent shell has none):
 
-1. `GET repos/{owner}/{repo}/actions/runs?limit=20`
-2. `GET repos/{owner}/{repo}/actions/runs/{run_id}/jobs?limit=100` — paginate; callee jobs sort
+1. `repos/{owner}/{repo}/actions/runs?limit=20`
+2. `repos/{owner}/{repo}/actions/runs/{run_id}/jobs?limit=100` — paginate; callee jobs sort
    **after** their caller, so the default page is exactly what drops them.
-3. `GET repos/{owner}/{repo}/actions/jobs/{job_id}/logs`
+3. `repos/{owner}/{repo}/actions/jobs/{job_id}/logs`, or
+   `tea actions runs logs --login gitea.stump.rocks --repo {owner}/{repo} --job {job_id} {run_id}`
 
 **That log endpoint works.** Verified 2026-08-30 on `stumpcloud/ansible` job 51301: 17,427 bytes of
 real log. Several files in these repos still claim it 404s — they are stale, and so is the
 one-job-per-hypothesis workaround they recommend. It needs a token; anonymous is 401 (measured the
-same day). The credentialless-shell token sources are in `references/gitea-actions-traps.md`.
+same day), and `tea` carries one from its own config file.
 
 Two reading habits that beat reading the diff:
 
