@@ -8,7 +8,7 @@ repository, three families:
 |---|---|---|
 | `coding` | agents building the apps | Go service layout, the composed CI pipeline, test house style, HTMX UIs, releases |
 | `operating` | scheduled sweep agents and humans running the fleet | triage, converge freshness, container wedges, secrets, storage, backups |
-| `review` | agents reviewing PRs, closing issues, auditing repos | verify the property not a proxy, land-or-replay a wedged PR, close with evidence |
+| `review` | agents reviewing PRs, closing issues, auditing repos | verify the property not a proxy, bring a wedged PR current and land it, close with evidence |
 
 Every skill loads in every harness (Claude Code, Crush, any agentskills.io runner) and is sized
 for a small model: the scheduled sweeps run on a local 27B with a 196k window.

@@ -173,11 +173,12 @@ Two reading habits that beat reading the diff:
 
 ## Not covered here
 
-PR mechanics, review, merge-on-green, worktrees, and force-push policy belong to the PR-review
+PR mechanics, review, worktrees, and bringing a PR branch current belong to the PR-review
 workflow and the standing agent rules. So does generic red-CI triage: reproduce locally, make the
-minimal fix, one concern per PR. This skill covers only what is specific to this forge, this
-act_runner, and these pipelines. Which forge copy is canonical, and creating or configuring a
-repo (topics, mirror, protection, collaborators), is the `stumpcloud-forges` skill.
+minimal fix, one concern per PR. The merge gate itself is only this: the branch is up to date with
+its base, and CI is green on that exact head. This skill covers only what is specific to this
+forge, this act_runner, and these pipelines. Which forge copy is canonical, and creating or
+configuring a repo (topics, mirror, protection, collaborators), is the `stumpcloud-forges` skill.
 
 ## Files in this skill
 
