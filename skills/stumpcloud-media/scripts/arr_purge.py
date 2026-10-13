@@ -30,6 +30,12 @@ Arr Backlog Purge — remove + blocklist dead and terminally-blocked queue items
 #   the host-scoped {{ inventory_hostname }}/arr, so the credential path moved
 #   with the services. The ie01/arr data stays in OpenBao for the era it
 #   describes; --vault-prefix still overrides.
+#
+# @joestump 10/13/2026 - qBittorrent login reads the 5.x response (204, empty
+#   body, cookie QBT_SID_<port>). The old `== "Ok."` check made qb_dead_hashes
+#   return an empty set against a healthy client, so a purge silently skipped
+#   every dead torrent and reported "0 zero-seeder torrents". qb_login_cookie
+#   is a copy of arr_triage.py's, pinned equal by arr_purge_test.py.
 
 Usage:
     python3 arr_purge.py --app sonarr                    # dry run, shows counts
@@ -90,6 +96,26 @@ def get_json(url, headers=None):
         return json.loads(r.read().decode())
 
 
+def qb_login_cookie(status, body, headers):
+    """
+    The session cookie from a qBittorrent login response, or None.
+
+    Must match arr_triage.py's copy, which carries the full explanation: 4.x
+    answers 200 / `Ok.` / `SID=`, 5.x answers 204 / empty / `QBT_SID_<port>=`.
+    Pinned by arr_purge_test.py::test_login_parsing_matches_across_scripts.
+    """
+    if not 200 <= status < 300 or body.strip() not in ("Ok.", ""):
+        return None
+    for k, v in headers:
+        if k.lower() != "set-cookie":
+            continue
+        pair = v.split(";")[0].strip()
+        name, _, value = pair.partition("=")
+        if "SID" in name.upper() and value:
+            return pair
+    return None
+
+
 def qb_dead_hashes():
     """Hashes of torrents that are queued but have zero seeders in the swarm."""
     pw = vault_field(f"{VAULT_PREFIX}/qbittorrent", "homepage_password")
@@ -97,13 +123,8 @@ def qb_dead_hashes():
         return set()
     data = urllib.parse.urlencode({"username": "admin", "password": pw}).encode()
     req = urllib.request.Request(f"{QB_URL}/api/v2/auth/login", data=data)
-    cookie = None
     with urllib.request.urlopen(req, timeout=30) as r:
-        if r.read().decode().strip() != "Ok.":
-            return set()
-        for k, v in r.getheaders():
-            if k.lower() == "set-cookie" and "SID=" in v:
-                cookie = v.split(";")[0]
+        cookie = qb_login_cookie(r.status, r.read().decode(), r.getheaders())
     if not cookie:
         return set()
     torrents = get_json(f"{QB_URL}/api/v2/torrents/info", {"Cookie": cookie})

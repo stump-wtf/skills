@@ -23,12 +23,20 @@ Run with `make test-scripts`, or `pytest skills/stumpcloud-media/scripts`.
 split arr_purge coverage into arr_purge_test.py.
 @joestump-agent 08/30/2026 - Added the structural-checks placement cases when
 the skill moved to stumpcloud/skills and the host stopped being a constant.
+@joestump 10/13/2026 - Added the qBittorrent login cases: 5.x answers 204 with
+a QBT_SID_<port> cookie, and the 4.x-only checks reported a healthy client as
+"could not authenticate".
 """
 
 import subprocess
+import urllib.error
+import urllib.request
+
+import pytest
 
 import arr_triage
 from arr_test_helpers import (
+    make_login_response,
     make_prefs,
     make_record,
     make_sab_queue,
@@ -293,3 +301,81 @@ def test_structural_checks_probes_the_pool_root_it_was_given(monkeypatch):
     assert "/voltron/Media/TV" in joined
     assert "df -BG /voltron/Media" in joined
     assert "/tank/media" not in joined
+
+
+# qBittorrent Login
+#
+# The login contract changed under the script. 4.x answered a good login with
+# 200, the body `Ok.` and a cookie named `SID`; 5.x (5.2.3 on ie02, 2026-10-13)
+# answers 204 with an empty body and a cookie named `QBT_SID_<port>`. Requiring
+# the 4.x shape did not error -- it reported "could not authenticate to
+# qBittorrent" against a healthy client, which reads as an outage and sends the
+# reader to rotate a password that was never wrong.
+#
+# Every cookie value below is a made-up literal. Nothing here logs in anywhere.
+
+def test_login_5x_no_content_with_port_scoped_cookie():
+    """204 + empty body + QBT_SID_8666: the shape that was rejected twice over."""
+    cookie = arr_triage.qb_login_cookie(
+        204, "", [("Set-Cookie", "QBT_SID_8666=fake-session; HttpOnly; path=/")])
+    assert cookie == "QBT_SID_8666=fake-session"
+
+
+def test_login_4x_ok_body_with_bare_sid_cookie():
+    """The legacy shape keeps working; an older client is still a valid target."""
+    cookie = arr_triage.qb_login_cookie(
+        200, "Ok.", [("Set-Cookie", "SID=fake-session; HttpOnly; path=/")])
+    assert cookie == "SID=fake-session"
+
+
+def test_login_4x_wrong_password_is_a_200_that_says_fails():
+    """4.x reports a bad password as 200 `Fails.`, so 2xx alone proves nothing."""
+    assert arr_triage.qb_login_cookie(200, "Fails.", []) is None
+    assert arr_triage.qb_login_cookie(
+        200, "Fails.", [("Set-Cookie", "SID=fake-session")]) is None
+
+
+@pytest.mark.parametrize("status", [301, 401, 403, 500])
+def test_login_outside_2xx_is_refused(status):
+    assert arr_triage.qb_login_cookie(
+        status, "", [("Set-Cookie", "QBT_SID_8666=fake-session")]) is None
+
+
+def test_login_without_a_session_cookie_is_refused():
+    """A 2xx that hands back no session cannot authenticate the next request."""
+    assert arr_triage.qb_login_cookie(204, "", []) is None
+    assert arr_triage.qb_login_cookie(204, "", [("Set-Cookie", "QBT_SID_8666=")]) is None
+
+
+def test_login_picks_the_session_cookie_by_name():
+    """Match the cookie NAME: a value or attribute that mentions SID is not one."""
+    headers = [
+        ("Set-Cookie", "theme=dark; note=SID=decoy; path=/"),
+        ("set-cookie", "QBT_SID_8666=fake-session; HttpOnly"),
+    ]
+    assert arr_triage.qb_login_cookie(204, "", headers) == "QBT_SID_8666=fake-session"
+
+
+def test_qb_session_logs_in_against_5x(monkeypatch):
+    """End to end through qb_session, minus the network and the vault."""
+    monkeypatch.setattr(arr_triage, "vault_field", lambda path, field: "fake-password")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, **kw: make_login_response())
+    assert arr_triage.qb_session() == "QBT_SID_8666=fake-session"
+
+
+def test_qb_session_logs_in_against_4x(monkeypatch):
+    monkeypatch.setattr(arr_triage, "vault_field", lambda path, field: "fake-password")
+    monkeypatch.setattr(
+        urllib.request, "urlopen",
+        lambda req, **kw: make_login_response(200, "Ok.", ("SID=fake-session",)))
+    assert arr_triage.qb_session() == "SID=fake-session"
+
+
+def test_qb_session_reads_a_5x_wrong_password_as_no_session(monkeypatch):
+    """5.x answers a bad password with 401, which urlopen raises rather than returns."""
+    def unauthorized(req, **kw):
+        raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, None)
+
+    monkeypatch.setattr(arr_triage, "vault_field", lambda path, field: "fake-password")
+    monkeypatch.setattr(urllib.request, "urlopen", unauthorized)
+    assert arr_triage.qb_session() is None

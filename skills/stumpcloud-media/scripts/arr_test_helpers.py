@@ -10,6 +10,9 @@ The builders take keyword overrides and default to a *healthy* box, so each test
 states only the one thing it is actually about.
 
 @joestump-agent 08/20/2026 - Split out of conftest.py after the collision.
+
+@joestump 10/13/2026 - Added make_login_response, a stand-in for what urlopen
+returns from qBittorrent's /auth/login, for the 4.x and 5.x login shapes.
 """
 
 
@@ -77,3 +80,27 @@ def make_sab_slot(nzo_id, status="Paused", *, pct="30", mbleft="1024", name=None
         "nzo_id": nzo_id,
     }
 
+
+def make_login_response(status=204, body="", cookies=("QBT_SID_8666=fake-session",)):
+    """What urlopen returns from qBittorrent's /auth/login; defaults to 5.x.
+
+    Each cookie becomes its own Set-Cookie header carrying the attributes the
+    real client appends, so a test proves the attributes are stripped.
+    """
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return body.encode()
+
+        def getheaders(self):
+            return [("Content-Length", str(len(body)))] + [
+                ("Set-Cookie", f"{c}; HttpOnly; SameSite=Strict; path=/") for c in cookies
+            ]
+
+    Response.status = status
+    return Response()

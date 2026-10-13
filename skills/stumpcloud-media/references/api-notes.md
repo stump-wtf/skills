@@ -105,9 +105,11 @@ Cookie auth:
 ```bash
 # operator Mac
 curl -s -c cookie -d "username=admin&password=$PW" \
-  "https://qbittorrent.stump.rocks/api/v2/auth/login"     # returns "Ok."
+  "https://qbittorrent.stump.rocks/api/v2/auth/login"     # 5.x: 204, empty body; 401 on a bad password
 curl -s -b cookie "https://qbittorrent.stump.rocks/api/v2/torrents/info"
 ```
+
+Do not test the login by its body or by grepping for `SID=`. qBittorrent 4.x answered `200` with `Ok.` and a cookie named `SID`; 5.x (seen on 5.2.3, 2026-10-13) answers `204` with an empty body and a cookie named `QBT_SID_<port>`. Accept any 2xx and let the cookie jar carry whatever name it is given.
 
 | Endpoint | Use |
 |---|---|
