@@ -35,6 +35,12 @@ Arr Backlog Triage — read-only diagnosis
 # provisioner now runs on ie02 and writes `{{ inventory_hostname }}/arr`, so the
 # credential path follows the services. The ie01/arr data stays in OpenBao for
 # the museum-copy era it describes.
+#
+# @joestump 10/13/2026 - qBittorrent login reads the 5.x response. 5.2.3 answers
+# a good login with 204 and an empty body, and names the cookie QBT_SID_<port>;
+# the old `== "Ok."` and `"SID=" in` checks rejected both, so a healthy client
+# was reported as "could not authenticate". Same contract change as
+# stumpcloud/ansible 1693a170 (qbittorrent_login_ok_status: [200, 204]).
 
 Usage:
     python3 arr_triage.py                 # human-readable report
@@ -114,6 +120,33 @@ def get_json(url, headers=None, timeout=60):
 
 # ---------------------------------------------------------------- download clients
 
+def qb_login_cookie(status, body, headers):
+    """
+    The session cookie from a qBittorrent login response, or None.
+
+    Pure, so both response shapes are pinned without a live client:
+
+      * 4.x: 200, body `Ok.`, cookie `SID=...`. A wrong password is ALSO a 200,
+        with body `Fails.` and no cookie -- so the body still has to be read.
+      * 5.x: 204, empty body, cookie `QBT_SID_<port>=...`. A wrong password is
+        a 401, which urlopen raises before this is ever reached.
+
+    The cookie is matched on its NAME containing `SID`, never on a substring of
+    the whole header: `QBT_SID_8666=` does not contain `SID=`, which is exactly
+    how the 5.x cookie went unrecognised.
+    """
+    if not 200 <= status < 300 or body.strip() not in ("Ok.", ""):
+        return None
+    for k, v in headers:
+        if k.lower() != "set-cookie":
+            continue
+        pair = v.split(";")[0].strip()
+        name, _, value = pair.partition("=")
+        if "SID" in name.upper() and value:
+            return pair
+    return None
+
+
 def qb_session():
     """Log in to qBittorrent, return a cookie header value or None."""
     pw = vault_field(f"{VAULT_PREFIX}/qbittorrent", "homepage_password")
@@ -123,14 +156,9 @@ def qb_session():
     req = urllib.request.Request(f"{QB_URL}/api/v2/auth/login", data=data)
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            if r.read().decode().strip() != "Ok.":
-                return None
-            for k, v in r.getheaders():
-                if k.lower() == "set-cookie" and "SID=" in v:
-                    return v.split(";")[0]
+            return qb_login_cookie(r.status, r.read().decode(), r.getheaders())
     except Exception:
         return None
-    return None
 
 
 def qb_state(cookie):

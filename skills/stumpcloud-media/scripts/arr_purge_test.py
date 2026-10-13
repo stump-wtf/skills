@@ -16,13 +16,18 @@ Run with `make test-scripts`, or `pytest skills/stumpcloud-media/scripts`.
 
 @joestump-agent 08/20/2026 - Split out of test_arr_triage.py when the suite
 moved to pytest and the foo_test.py convention.
+@joestump 10/13/2026 - Added the qBittorrent 5.x login case: a login this
+script could not read made it purge with an empty dead-torrent set, silently.
 """
 
 import subprocess
+import urllib.request
+
+import pytest
 
 import arr_purge
 import arr_triage
-from arr_test_helpers import make_record
+from arr_test_helpers import make_login_response, make_record, make_torrent
 
 
 # ------------------------------------------------------------ selection: dedupe
@@ -127,3 +132,42 @@ def test_vault_prefix_matches_across_scripts():
     skipping" while arr_triage reports a queue full of purgeable records.
     """
     assert arr_purge.DEFAULT_VAULT_PREFIX == arr_triage.DEFAULT_VAULT_PREFIX
+
+
+# qBittorrent Login
+#
+# A login this script cannot read is not an error here, it is an empty set: the
+# purge carries on, prints "qBittorrent reports 0 zero-seeder torrents", and
+# leaves every dead torrent in the queue. Against qBittorrent 5.x (204, empty
+# body, cookie QBT_SID_<port>) that was every run.
+
+def test_dead_hashes_are_found_through_a_5x_login(monkeypatch):
+    seen = {}
+
+    def fake_get_json(url, headers=None):
+        seen["cookie"] = (headers or {}).get("Cookie")
+        return [
+            make_torrent("DEAD", "stalledDL", swarm=0),
+            make_torrent("live", "stalledDL", swarm=4),
+        ]
+
+    monkeypatch.setattr(arr_purge, "vault_field", lambda path, field: "fake-password")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, **kw: make_login_response())
+    monkeypatch.setattr(arr_purge, "get_json", fake_get_json)
+    assert arr_purge.qb_dead_hashes() == {"dead"}
+    assert seen["cookie"] == "QBT_SID_8666=fake-session"
+
+
+@pytest.mark.parametrize("status, body, headers", [
+    (204, "", [("Set-Cookie", "QBT_SID_8666=fake-session; HttpOnly; path=/")]),
+    (200, "Ok.", [("Set-Cookie", "SID=fake-session; HttpOnly; path=/")]),
+    (200, "Fails.", []),
+    (200, "Fails.", [("Set-Cookie", "SID=fake-session")]),
+    (401, "", [("Set-Cookie", "QBT_SID_8666=fake-session")]),
+    (204, "", []),
+    (204, "", [("Set-Cookie", "theme=dark; note=SID=decoy")]),
+])
+def test_login_parsing_matches_across_scripts(status, body, headers):
+    """The two scripts carry a copy each; a fix to one must reach the other."""
+    assert (arr_purge.qb_login_cookie(status, body, headers)
+            == arr_triage.qb_login_cookie(status, body, headers))
