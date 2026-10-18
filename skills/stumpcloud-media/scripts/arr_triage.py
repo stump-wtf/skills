@@ -292,6 +292,22 @@ def assess_sab(q, misc):
 
 # ---------------------------------------------------------------- *arr queues
 
+def ssh_probe(ssh, remote_cmd, timeout):
+    """Run a remote probe and report the probe's own failure as an error.
+
+    A failed ssh (key not authorized, host unreachable) exits nonzero with
+    empty stdout, which parses the same as "the thing is empty" -- an empty
+    forwarded_port, zero recent imports, a blank df. The exit code is the
+    only signal separating "the tunnel is dead" from "we could not reach it
+    to ask", and the report must not print a hard verdict from the second.
+    """
+    r = subprocess.run(ssh + [remote_cmd], capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        detail = (r.stderr or "").strip() or f"exit {r.returncode}"
+        return None, f"ssh: {detail}"
+    return r.stdout, None
+
+
 def structural_checks(host, media_root):
     """
     Slow-burn problems that never show up as a stalled queue.
@@ -312,22 +328,25 @@ def structural_checks(host, media_root):
     # the pool fills at twice the expected rate. A hardlinked file has link
     # count >= 2; a copy has 1.
     try:
-        r = subprocess.run(
-            ssh + [f'sudo find {media_root}/TV -name "*.mkv" -newermt "-7 days" '
-                   '-printf "%n\\n" 2>/dev/null | sort | uniq -c'],
-            capture_output=True, text=True, timeout=90)
-        counts = {}
-        for line in r.stdout.strip().splitlines():
-            parts = line.split()
-            if len(parts) == 2:
-                counts[int(parts[1])] = int(parts[0])
-        total = sum(counts.values())
-        singles = counts.get(1, 0)
-        out["hardlinks"] = {
-            "recent_imports_checked": total,
-            "link_count_1_copies": singles,
-            "broken": total > 0 and singles == total,
-        }
+        stdout, err = ssh_probe(
+            ssh, f'sudo find {media_root}/TV -name "*.mkv" -newermt "-7 days" '
+                 '-printf "%n\\n" 2>/dev/null | sort | uniq -c',
+            timeout=90)
+        if err:
+            out["hardlinks"] = {"error": err}
+        else:
+            counts = {}
+            for line in stdout.strip().splitlines():
+                parts = line.split()
+                if len(parts) == 2:
+                    counts[int(parts[1])] = int(parts[0])
+            total = sum(counts.values())
+            singles = counts.get(1, 0)
+            out["hardlinks"] = {
+                "recent_imports_checked": total,
+                "link_count_1_copies": singles,
+                "broken": total > 0 and singles == total,
+            }
     except Exception as e:
         out["hardlinks"] = {"error": str(e)}
 
@@ -335,19 +354,24 @@ def structural_checks(host, media_root):
     # forwarded port means zero inbound peers -- which presents as torrents
     # "stalled with no connections" on releases whose swarm is actually alive.
     try:
-        r = subprocess.run(
-            ssh + ['sudo docker exec gluetun sh -c "cat /tmp/gluetun/forwarded_port 2>/dev/null"'],
-            capture_output=True, text=True, timeout=60)
-        port = r.stdout.strip()
-        out["vpn_forwarded_port"] = {"port": port or None, "working": bool(port)}
+        stdout, err = ssh_probe(
+            ssh, 'sudo docker exec gluetun sh -c "cat /tmp/gluetun/forwarded_port 2>/dev/null"',
+            timeout=60)
+        if err:
+            out["vpn_forwarded_port"] = {"error": err}
+        else:
+            port = stdout.strip()
+            out["vpn_forwarded_port"] = {"port": port or None, "working": bool(port)}
     except Exception as e:
         out["vpn_forwarded_port"] = {"error": str(e)}
 
     try:
-        r = subprocess.run(ssh + [f"df -BG {media_root} | tail -1"],
-                           capture_output=True, text=True, timeout=60)
-        f = r.stdout.split()
-        out["disk"] = {"used": f[2], "free": f[3], "pct": f[4]} if len(f) >= 5 else {"raw": r.stdout}
+        stdout, err = ssh_probe(ssh, f"df -BG {media_root} | tail -1", timeout=60)
+        if err:
+            out["disk"] = {"error": err}
+        else:
+            f = stdout.split()
+            out["disk"] = {"used": f[2], "free": f[3], "pct": f[4]} if len(f) >= 5 else {"raw": stdout}
     except Exception as e:
         out["disk"] = {"error": str(e)}
 
@@ -402,8 +426,8 @@ def main():
     ap.add_argument("--no-ssh", action="store_true",
                     help="skip the host-level structural checks")
     ap.add_argument("--media-host", default=DEFAULT_MEDIA_HOST,
-                    help="ssh target running the arr stack; derive with "
-                         "`ansible-inventory -i dub.yaml --graph media`")
+                    help="ssh target running the arr stack, as `user@host` or bare host; "
+                         "derive with `ansible-inventory -i dub.yaml --graph media`")
     ap.add_argument("--media-root", default=DEFAULT_MEDIA_ROOT,
                     help="host path of paths.media on that host; derive with "
                          "`grep -n 'media:' dub.yaml`")
@@ -562,7 +586,11 @@ def main():
                 print(f"  seeding limits set ({qb['seeding_tb']} TB seeding)")
 
         pf = st.get("vpn_forwarded_port", {})
-        if pf.get("working") is False:
+        if "error" in pf:
+            print(f"  VPN port forwarding unverified: the ssh probe failed ({pf['error']}). "
+                  "That says nothing about the tunnel -- fix ssh access to "
+                  f"{args.media_host} and re-run before trusting any stalled-release theory.")
+        elif pf.get("working") is False:
             print("  *** VPN PORT FORWARDING DEAD: gluetun's forwarded_port is empty, so "
                   "qBittorrent accepts no inbound peers. Low-seed torrents will sit 'stalled "
                   "with no connections' on releases whose swarm is actually alive. ***")

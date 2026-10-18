@@ -40,7 +40,7 @@ python3 scripts/arr_triage.py
 python3 scripts/arr_triage.py --media-host ie02.stump.rocks --media-root /voltron/Media
 ```
 
-Read-only — it never removes, blocklists, resumes, or writes config, so run it before forming any theory. It authenticates, cross-references each app's queue against both clients, and says what is actually broken. `--json` for your own analysis, `--app sonarr` to narrow, `--no-ssh` to skip the host checks.
+Read-only — it never removes, blocklists, resumes, or writes config, so run it before forming any theory. It authenticates, cross-references each app's queue against both clients, and says what is actually broken. `--json` for your own analysis, `--app sonarr` to narrow, `--no-ssh` to skip the host checks. `--media-host` takes `user@host` when the default ssh user has no key on the media host; a probe that cannot run reports an `error` marker, never a verdict.
 
 **It is a starting point, not the investigation.** It answers "is this wedged right now" and is deliberately conservative. If its numbers do not explain what Joe is seeing, keep digging: the history endpoint, link counts on disk, container logs, real byte progress over 30 seconds.
 
@@ -102,7 +102,7 @@ The link-count check in `arr_triage.py --structural` is a cheap corroborating si
 
 **No seeding limit means nothing is ever reclaimed.** An *arr will not remove a torrent that is still seeding. `downloads.yaml` pins `max_ratio_enabled` and `max_seeding_time_enabled` true, so seeing them off is converge drift.
 
-**Dead VPN port forwarding looks exactly like dead torrents.** An empty forwarded port means zero inbound peers, and low-seed torrents sit "stalled with no connections" on swarms that are perfectly alive. Judge viability by `num_complete` (swarm seeders), never `num_seeds` (currently connected). Purging a live-swarm-no-connections torrent throws away a good grab and the replacement stalls identically.
+**Dead VPN port forwarding looks exactly like dead torrents.** An empty forwarded port means zero inbound peers, and low-seed torrents sit "stalled with no connections" on swarms that are perfectly alive. Judge viability by `num_complete` (swarm seeders), never `num_seeds` (currently connected). Purging a live-swarm-no-connections torrent throws away a good grab and the replacement stalls identically. If `vpn_forwarded_port` carries an `error` instead of `working: false`, the ssh probe itself failed (key not authorized on the host) — read that as unverified, not dead.
 
 ## The request front-end submits a path, and nobody validates it
 

@@ -26,6 +26,10 @@ the skill moved to stumpcloud/skills and the host stopped being a constant.
 @joestump 10/13/2026 - Added the qBittorrent login cases: 5.x answers 204 with
 a QBT_SID_<port> cookie, and the 4.x-only checks reported a healthy client as
 "could not authenticate".
+@joestump-agent 10/18/2026 - Added the ssh probe-failure cases: an unauthenticated
+probe exits nonzero with empty stdout, and the report used to read that empty
+stdout as "forwarded_port is empty" -- a hard DEAD verdict for a tunnel nobody
+had actually looked at.
 """
 
 import subprocess
@@ -301,6 +305,72 @@ def test_structural_checks_probes_the_pool_root_it_was_given(monkeypatch):
     assert "/voltron/Media/TV" in joined
     assert "df -BG /voltron/Media" in joined
     assert "/tank/media" not in joined
+
+
+def test_failed_ssh_probe_reports_an_error_not_a_verdict(monkeypatch):
+    """An unauthorized key makes every probe exit nonzero with empty stdout.
+
+    That empty stdout used to parse as "forwarded_port is empty" and the
+    report printed a hard DEAD verdict for a tunnel nobody had looked at; the
+    same silent shape degraded the hardlink and disk checks. Nonzero exit must
+    mean "unverified", carried as an error marker, whatever the probe is.
+    """
+    class Result:
+        returncode = 255
+        stdout = ""
+        stderr = "Permission denied (publickey).\n"
+
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: Result())
+    out = arr_triage.structural_checks("ie02.stump.rocks", "/voltron/Media")
+    for key in ("hardlinks", "vpn_forwarded_port", "disk"):
+        assert "error" in out[key], f"{key} did not carry an error marker: {out[key]}"
+        assert "working" not in out[key]
+        assert "recent_imports_checked" not in out[key]
+    assert "Permission denied" in out["vpn_forwarded_port"]["error"]
+    assert "ssh:" in out["disk"]["error"]
+
+
+def test_failed_ssh_probe_without_stderr_names_the_exit(monkeypatch):
+    """Some failures emit nothing on stderr; the marker must still be honest."""
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: Result())
+    out = arr_triage.structural_checks("ie02.stump.rocks", "/voltron/Media")
+    assert out["vpn_forwarded_port"] == {"error": "ssh: exit 1"}
+
+
+def test_successful_probe_with_empty_port_is_still_dead(monkeypatch):
+    """rc 0 with an empty forwarded_port is a real DEAD, not a probe failure.
+
+    The guard must distinguish "ssh could not run" from "the tunnel reports
+    no port"; conflating the two directionally inverts the original bug.
+    """
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: Result())
+    out = arr_triage.structural_checks("ie02.stump.rocks", "/voltron/Media")
+    assert out["vpn_forwarded_port"] == {"port": None, "working": False}
+    # no recent .mkv imports is a real state, not an error
+    assert out["hardlinks"] == {
+        "recent_imports_checked": 0, "link_count_1_copies": 0, "broken": False,
+    }
+
+
+def test_successful_probe_with_a_port_reports_it(monkeypatch):
+    class Result:
+        returncode = 0
+        stdout = "60283\n"
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: Result())
+    out = arr_triage.structural_checks("ie02.stump.rocks", "/voltron/Media")
+    assert out["vpn_forwarded_port"] == {"port": "60283", "working": True}
 
 
 # qBittorrent Login
