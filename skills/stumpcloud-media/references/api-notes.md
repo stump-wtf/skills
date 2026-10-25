@@ -51,6 +51,13 @@ Same API shape, **different versions** — the single most common scripting mist
 | Sonarr | `https://sonarr.stump.rocks` | **v3** |
 | Radarr | `https://radarr.stump.rocks` | **v3** |
 | Lidarr | `https://lidarr.stump.rocks` | **v1** |
+| Prowlarr | `https://prowlarr.stump.rocks` | **v1** |
+
+The prefix is the API version, not the app version: lidarr's 3.x and prowlarr's
+2.5.x builds ship only an `api/v1` route tree (their source has a single `Api.V1`
+project, no v3), while sonarr and radarr stay on `api/v3`. A wrong prefix answers
+404 with an empty body while every other endpoint is green — probe
+`system/status` on both prefixes before declaring a service dead.
 
 Auth is the `X-Api-Key` header on every request.
 
@@ -93,7 +100,7 @@ GET  /api/{ver}/diskspace      # as the container sees it, incl. bind mounts
 GET  /api/{ver}/blocklist?pageSize=50&seriesIds=141
 GET  /api/v3/episode?seriesId=N          # hasFile/monitored per episode
 GET  /api/{ver}/downloadclient           # host/port/user; passwords redacted
-GET  /api/v3/rootfolder                  # the /data paths the app has stored
+GET  /api/{ver}/rootfolder               # the /data paths the app has stored
 ```
 
 Season searches are the right tool after clearing a blocker — they report `Season search completed. N reports downloaded.`, so you can confirm real releases were grabbed rather than assuming.

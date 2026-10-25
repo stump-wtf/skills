@@ -9,11 +9,13 @@ The API key is in each app's `config.xml`. Read it into a variable; never print 
 
 ```bash
 # on the DERIVED media host, as joestump
-for pair in sonarr:8989 radarr:7878 lidarr:8686; do
-  app="${pair%%:*}"; port="${pair##*:}"
+# the api version is per app, not per host: sonarr and radarr answer /api/v3,
+# lidarr answers /api/v1 (its builds expose no v3 route; see api-notes.md)
+for triple in sonarr:8989:v3 radarr:7878:v3 lidarr:8686:v1; do
+  app="${triple%%:*}"; rest="${triple#*:}"; port="${rest%%:*}"; ver="${rest##*:}"
   K=$(sudo grep -oP '(?<=<ApiKey>)[^<]+' "/volumes/$app/config/config.xml") || continue
   echo "== $app"
-  curl -s -H "X-Api-Key: $K" "http://localhost:$port/api/v3/rootfolder" \
+  curl -s -H "X-Api-Key: $K" "http://localhost:$port/api/$ver/rootfolder" \
     | python3 -c 'import sys,json;[print(" ", r["path"], "accessible=", r["accessible"]) for r in json.load(sys.stdin)]'
 done
 ```
@@ -21,7 +23,9 @@ done
 `accessible: false` means the bind mount moved under the service. That is an
 inventory change — file an issue, do not repoint it by hand.
 
-Note Lidarr is `/api/v1`, not `/api/v3` — see `api-notes.md` for the version split.
+Note lidarr (and prowlarr) are `/api/v1`, not `/api/v3` — see `api-notes.md`
+for the version split. An empty-body 404 on a versioned path is a wrong
+prefix, not a dead service: probe `system/status` on both prefixes to tell.
 
 ## Ask Jellyseerr what it will submit
 
